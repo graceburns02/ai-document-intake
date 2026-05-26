@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -8,6 +8,34 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class StrictBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @staticmethod
+    def _normalize_scalar(value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped == "" or stripped.lower() in {"n/a", "na", "none", "null", "unknown", "-"}:
+                return None
+            return stripped
+        return value
+
+    @classmethod
+    def _to_decimal(cls, value):
+        value = cls._normalize_scalar(value)
+        if value is None:
+            return None
+        if isinstance(value, Decimal):
+            return value
+        if isinstance(value, (int, float)):
+            return Decimal(str(value))
+        if isinstance(value, str):
+            cleaned = value.replace("$", "").replace(",", "").strip()
+            try:
+                return Decimal(cleaned)
+            except InvalidOperation:
+                return value
+        return value
 
 
 class LineItem(StrictBaseModel):
@@ -22,6 +50,16 @@ class LineItem(StrictBaseModel):
         if value is not None and value < 0:
             raise ValueError("line_total cannot be negative")
         return value
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def normalize_description(cls, value):
+        return cls._normalize_scalar(value)
+
+    @field_validator("quantity", "unit_price", "line_total", mode="before")
+    @classmethod
+    def normalize_numeric_fields(cls, value):
+        return cls._to_decimal(value)
 
 
 class InvoiceHeader(StrictBaseModel):
@@ -50,6 +88,31 @@ class InvoiceData(StrictBaseModel):
     total: Optional[Decimal] = None
     payment_terms: Optional[str] = None
     line_items: List[LineItem] = Field(default_factory=list)
+
+    @field_validator(
+        "vendor_name",
+        "customer_name",
+        "invoice_number",
+        "invoice_date",
+        "due_date",
+        "payment_terms",
+        mode="before",
+    )
+    @classmethod
+    def normalize_text_fields(cls, value):
+        return cls._normalize_scalar(value)
+
+    @field_validator("subtotal", "tax", "total", mode="before")
+    @classmethod
+    def normalize_totals(cls, value):
+        return cls._to_decimal(value)
+
+    @field_validator("line_items", mode="before")
+    @classmethod
+    def normalize_line_items(cls, value):
+        if value is None or value == "":
+            return []
+        return value
 
 
 class ValidationIssue(BaseModel):

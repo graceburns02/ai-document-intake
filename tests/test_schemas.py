@@ -37,3 +37,23 @@ def test_json_schema_forbids_additional_properties_on_all_objects():
     for model_schema in (line_item_schema, totals_schema, header_schema):
         assert model_schema["type"] == "object"
         assert model_schema["additionalProperties"] is False
+
+
+def test_missing_optional_fields_default_to_none_and_empty_items():
+    invoice = InvoiceData()
+    assert invoice.vendor_name is None
+    assert invoice.subtotal is None
+    assert invoice.line_items == []
+
+
+def test_currency_and_quantity_strings_are_coerced():
+    invoice = InvoiceData(
+        subtotal="$1,234.56",
+        tax="",
+        line_items=[LineItem(description="X", quantity="2", unit_price="$3.25", line_total="N/A")],
+    )
+    assert invoice.subtotal == Decimal("1234.56")
+    assert invoice.tax is None
+    assert invoice.line_items[0].quantity == Decimal("2")
+    assert invoice.line_items[0].unit_price == Decimal("3.25")
+    assert invoice.line_items[0].line_total is None

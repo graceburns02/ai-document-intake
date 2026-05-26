@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from openai import OpenAI
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.schemas import InvoiceData
 
@@ -22,6 +22,9 @@ class ExtractionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invoice: InvoiceData | None
     raw_output: str | None = None
+    parsed_output: dict[str, Any] | None = None
+    unknown_keys: list[str] = Field(default_factory=list)
+    validation_error: str | None = None
     error: str | None = None
 
 
@@ -100,6 +103,37 @@ def _clean_json_candidate(raw_text: str) -> dict[str, Any]:
     return normalized
 
 
+def _strip_unknown_keys(payload: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    allowed_root = set(InvoiceData.model_fields.keys())
+    allowed_line_item = set(InvoiceData.model_fields["line_items"].annotation.__args__[0].model_fields.keys())
+
+    stripped = {}
+    unknown: list[str] = []
+    for key, value in payload.items():
+        if key not in allowed_root:
+            unknown.append(key)
+            continue
+        stripped[key] = value
+
+    line_items = stripped.get("line_items")
+    if isinstance(line_items, list):
+        cleaned_items = []
+        for i, item in enumerate(line_items):
+            if not isinstance(item, dict):
+                cleaned_items.append(item)
+                continue
+            cleaned = {}
+            for key, value in item.items():
+                if key not in allowed_line_item:
+                    unknown.append(f"line_items[{i}].{key}")
+                    continue
+                cleaned[key] = value
+            cleaned_items.append(cleaned)
+        stripped["line_items"] = cleaned_items
+
+    return stripped, unknown
+
+
 def _response_text(response: Any) -> str:
     text = getattr(response, "output_text", None)
     return text if text else str(response)
@@ -139,7 +173,9 @@ def extract_invoice_with_fallback(text: str) -> ExtractionResult:
     schema = InvoiceData.model_json_schema()
     base_prompt = (
         "Extract invoice fields and line items from the text below. "
-        "Return only valid JSON with keys matching the schema exactly.\n\n"
+        "Return only valid JSON with keys matching the schema exactly. "
+        "Return null for unknown fields. Return numbers without currency symbols. "
+        "Return line_items as [] if no items are found. Use exactly the schema field names.\n\n"
         f"{text}"
     )
 
@@ -151,7 +187,9 @@ def extract_invoice_with_fallback(text: str) -> ExtractionResult:
             response = _create_response(client, base_prompt, schema=None)
         raw_text = _response_text(response)
         parsed = _clean_json_candidate(raw_text)
-        return ExtractionResult(invoice=InvoiceData.model_validate(parsed), raw_output=raw_text)
+        stripped, unknown_keys = _strip_unknown_keys(parsed)
+        invoice = InvoiceData.model_validate(stripped)
+        return ExtractionResult(invoice=invoice, raw_output=raw_text, parsed_output=stripped, unknown_keys=unknown_keys)
     except (json.JSONDecodeError, ValidationError, TypeError):
         repair_prompt = (
             "Convert the following content into valid JSON matching the invoice schema exactly. "
@@ -165,11 +203,14 @@ def extract_invoice_with_fallback(text: str) -> ExtractionResult:
                 repair_response = _create_response(client, repair_prompt, schema=None)
             repaired_text = _response_text(repair_response)
             repaired = _clean_json_candidate(repaired_text)
-            return ExtractionResult(invoice=InvoiceData.model_validate(repaired), raw_output=repaired_text)
-        except Exception:
+            stripped, unknown_keys = _strip_unknown_keys(repaired)
+            invoice = InvoiceData.model_validate(stripped)
+            return ExtractionResult(invoice=invoice, raw_output=repaired_text, parsed_output=stripped, unknown_keys=unknown_keys)
+        except Exception as exc:
             return ExtractionResult(
                 invoice=None,
                 raw_output=raw_text or None,
+                validation_error=str(exc),
                 error="Schema validation failed for model output. You can still review/edit invoice fields manually.",
             )
 

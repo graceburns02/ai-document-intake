@@ -46,9 +46,17 @@ if uploaded:
                 else:
                     st.session_state["invoice"] = InvoiceData().model_dump()
                     st.warning(result.error or "Extraction failed. You can still review/edit manually.")
-                    if result.raw_output:
-                        with st.expander("Debug: raw model output", expanded=False):
-                            st.code(result.raw_output, language="json")
+                with st.expander("Debug: extraction details", expanded=False):
+                    st.markdown("**Raw OCR text**")
+                    st.text(raw_text[:8000])
+                    st.markdown("**Raw model JSON/text**")
+                    st.code(result.raw_output or "(none)", language="json")
+                    st.markdown("**Parsed/cleaned JSON used for validation**")
+                    st.code(result.parsed_output or {}, language="json")
+                    st.markdown("**Unknown keys stripped before validation**")
+                    st.code(result.unknown_keys or [], language="json")
+                    st.markdown("**Validation error**")
+                    st.code(result.validation_error or "(none)")
             except Exception as exc:
                 st.error(str(exc))
 
