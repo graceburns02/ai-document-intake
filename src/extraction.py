@@ -3,11 +3,10 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
 from typing import Any
 
 from openai import OpenAI
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from src.schemas import InvoiceData
 
@@ -19,8 +18,8 @@ SYSTEM_PROMPT = (
 )
 
 
-@dataclass
-class ExtractionResult:
+class ExtractionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     invoice: InvoiceData | None
     raw_output: str | None = None
     error: str | None = None
@@ -146,7 +145,10 @@ def extract_invoice_with_fallback(text: str) -> ExtractionResult:
 
     raw_text = ""
     try:
-        response = _create_response(client, base_prompt, schema=schema)
+        try:
+            response = _create_response(client, base_prompt, schema=schema)
+        except Exception:
+            response = _create_response(client, base_prompt, schema=None)
         raw_text = _response_text(response)
         parsed = _clean_json_candidate(raw_text)
         return ExtractionResult(invoice=InvoiceData.model_validate(parsed), raw_output=raw_text)
@@ -157,7 +159,10 @@ def extract_invoice_with_fallback(text: str) -> ExtractionResult:
             f"{raw_text}"
         )
         try:
-            repair_response = _create_response(client, repair_prompt, schema=schema)
+            try:
+                repair_response = _create_response(client, repair_prompt, schema=schema)
+            except Exception:
+                repair_response = _create_response(client, repair_prompt, schema=None)
             repaired_text = _response_text(repair_response)
             repaired = _clean_json_candidate(repaired_text)
             return ExtractionResult(invoice=InvoiceData.model_validate(repaired), raw_output=repaired_text)

@@ -3,10 +3,14 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class LineItem(BaseModel):
+class StrictBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class LineItem(StrictBaseModel):
     description: Optional[str] = None
     quantity: Optional[Decimal] = Field(default=None, ge=0)
     unit_price: Optional[Decimal] = Field(default=None, ge=0)
@@ -20,7 +24,22 @@ class LineItem(BaseModel):
         return value
 
 
-class InvoiceData(BaseModel):
+class InvoiceHeader(StrictBaseModel):
+    vendor_name: Optional[str] = None
+    customer_name: Optional[str] = None
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[str] = None
+    due_date: Optional[str] = None
+    payment_terms: Optional[str] = None
+
+
+class InvoiceTotals(StrictBaseModel):
+    subtotal: Optional[Decimal] = None
+    tax: Optional[Decimal] = None
+    total: Optional[Decimal] = None
+
+
+class InvoiceData(StrictBaseModel):
     vendor_name: Optional[str] = None
     customer_name: Optional[str] = None
     invoice_number: Optional[str] = None
@@ -34,6 +53,7 @@ class InvoiceData(BaseModel):
 
 
 class ValidationIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     severity: str
     code: str
     message: str
