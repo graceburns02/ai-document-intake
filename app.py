@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.extraction import extract_structured_invoice
+from src.extraction import extract_invoice_with_fallback
 from src.export import invoice_summary_csv, invoice_to_json, line_items_to_csv
 from src.ocr import extract_text_from_file, load_preview_images
 from src.schemas import InvoiceData, LineItem
@@ -39,9 +39,16 @@ if uploaded:
             try:
                 raw_text = extract_text_from_file(uploaded)
                 st.session_state["raw_text"] = raw_text
-                invoice = extract_structured_invoice(raw_text)
-                st.session_state["invoice"] = invoice.model_dump()
-                st.success("Extraction complete. Review and edit below.")
+                result = extract_invoice_with_fallback(raw_text)
+                if result.invoice is not None:
+                    st.session_state["invoice"] = result.invoice.model_dump()
+                    st.success("Extraction complete. Review and edit below.")
+                else:
+                    st.session_state["invoice"] = InvoiceData().model_dump()
+                    st.warning(result.error or "Extraction failed. You can still review/edit manually.")
+                    if result.raw_output:
+                        with st.expander("Debug: raw model output", expanded=False):
+                            st.code(result.raw_output, language="json")
             except Exception as exc:
                 st.error(str(exc))
 

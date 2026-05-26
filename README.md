@@ -75,20 +75,28 @@ Set in `.env`:
   "invoice_number": "INV-2026-0142",
   "invoice_date": "2026-05-01",
   "due_date": "2026-05-31",
-  "subtotal": "1500.00",
-  "tax": "120.00",
-  "total": "1620.00",
+  "subtotal": 1500.0,
+  "tax": 120.0,
+  "total": 1620.0,
   "payment_terms": "Net 30",
   "line_items": [
     {
       "description": "Warehouse Labels",
-      "quantity": "100",
-      "unit_price": "10.00",
-      "line_total": "1000.00"
+      "quantity": 100,
+      "unit_price": 10.0,
+      "line_total": 1000.0
     }
   ]
 }
 ```
+
+
+## Extraction Reliability
+- The extraction prompt enforces **JSON-only** responses (no markdown/code fences).
+- Model responses are cleaned before validation by stripping markdown fences, selecting the first JSON object, and normalizing common placeholders (`""`, `"N/A"`, `"unknown"`) to `null`.
+- `line_items` is always normalized to an array (`[]` when missing).
+- If schema validation fails, the app shows a portfolio-friendly warning, reveals raw model output in a debug expander, and still opens the manual review editor so users can continue without crashes.
+- A one-time repair retry asks the model to convert its prior output into valid schema JSON.
 
 ## AI Product Tradeoffs
 - **OCR quality limitations:** Low-resolution scans and skew can degrade extraction quality.
