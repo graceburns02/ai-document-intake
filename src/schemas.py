@@ -7,15 +7,15 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class LineItem(BaseModel):
-    description: str = Field(..., min_length=1)
-    quantity: Decimal = Field(..., ge=0)
-    unit_price: Decimal = Field(..., ge=0)
-    line_total: Decimal = Field(...)
+    description: Optional[str] = None
+    quantity: Optional[Decimal] = Field(default=None, ge=0)
+    unit_price: Optional[Decimal] = Field(default=None, ge=0)
+    line_total: Optional[Decimal] = None
 
     @field_validator("line_total")
     @classmethod
-    def ensure_non_negative_total(cls, value: Decimal) -> Decimal:
-        if value < 0:
+    def ensure_non_negative_total(cls, value: Optional[Decimal]) -> Optional[Decimal]:
+        if value is not None and value < 0:
             raise ValueError("line_total cannot be negative")
         return value
 
